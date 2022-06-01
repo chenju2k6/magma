@@ -15,11 +15,7 @@ fi
 
 # build the libpng library
 cd "$TARGET/repo"
-
-CONFIGURE_FLAGS=""
-if [[ $CFLAGS = *sanitize=memory* ]]; then
-  CONFIGURE_FLAGS="no-asm"
-fi
+CONFIGURE_FLAGS="no-asm"
 
 # the config script supports env var LDLIBS instead of LIBS
 export LDLIBS="$LIBS"

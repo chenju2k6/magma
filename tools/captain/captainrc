@@ -37,7 +37,7 @@ POLL=5
 
 # [CACHE_ON_DISK]: if set, the cache workdir is mounted on disk instead of
 # in-memory (default: unset)
-# CACHE_ON_DISK=1
+CACHE_ON_DISK=1
 
 # [NO_ARCHIVE]: if set, campaign workdirs will not be tarballed (default: unset)
 # NO_ARCHIVE=1
@@ -71,12 +71,16 @@ POLL=5
 ###
 
 # FUZZERS: an array of fuzzer names (from magma/fuzzers/*) to evaluate
-FUZZERS=(afl aflfast moptafl aflplusplus fairfuzz honggfuzz)
+#FUZZERS=(afl aflfast moptafl aflplusplus fairfuzz honggfuzz)
+FUZZERS=(symcc_afl)
 
 # [fuzzer_TARGETS]: an array of target names (from magma/targets/*) to fuzz with
 # `fuzzer`. The `fuzzer` prefix is a fuzzer listed in the FUZZERS array
 # (default: all targets)
-# afl_TARGETS=(libpng libtiff libxml2)
+symcc_afl_TARGETS=(libpng libxml2 libtiff openssl sqlite3)
+#symccafl_TARGETS=(sqlite3)
+#symsan_TARGETS=(libpng libxml2 libtiff openssl sqlite3)
+#symsan_TARGETS=(poppler)
 
 # [fuzzer_target_PROGRAMS]: an array of program names (from
 # magma/targets/target/configrc) to use as execution drivers when fuzzing the

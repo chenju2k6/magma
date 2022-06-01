@@ -4,6 +4,29 @@ FROM ubuntu:18.04
 # other attack vectors.
 
 RUN apt-get update && apt-get install -y sudo
+RUN apt-get update -y &&  \
+    apt-get -y install wget python-pip python3-setuptools apt-transport-https \
+    llvm-6.0 llvm-6.0-dev clang-6.0 llvm-6.0-tools libboost-all-dev texinfo \
+    lsb-release software-properties-common autoconf curl zlib1g-dev flex bison git
+
+RUN git clone https://github.com/protocolbuffers/protobuf.git /protobuf  && \
+    cd /protobuf && \
+    git submodule update --init --recursive && \
+    unset CFLAGS && \
+    unset CXXFLAGS && \
+    ./autogen.sh && \
+    ./configure  && \
+   # ./configure  && \
+    make -j && \
+    make install && \
+    ldconfig
+
+RUN apt-get -y install cmake
+RUN git clone https://github.com/Z3Prover/z3.git /z3 && \
+    cd /z3 && git checkout z3-4.8.12 && mkdir -p build && cd build && \
+    cmake .. && make -j && make install
+    #cmake .. && make -j && make install
+RUN ldconfig
 
 ## Magma directory hierarchy
 # magma_root is relative to the docker-build's working directory
@@ -26,8 +49,11 @@ ENV RANLIB /usr/bin/ranlib
 ARG USER_ID=1000
 ARG GROUP_ID=1000
 RUN mkdir -p /home && \
-	groupadd -g ${GROUP_ID} magma && \
-	useradd -l -u ${USER_ID} -K UMASK=0000 -d /home -g magma magma && \
+	#groupadd -g ${GROUP_ID} magma && \
+	groupadd  magma && \
+	#useradd -l -u ${USER_ID} -K UMASK=0000 -d /home -g magma magma && \
+	#useradd -l -u ${USER_ID}  -d /home -g magma magma && \
+	useradd -l   -d /home -g magma magma && \
 	chown magma:magma /home
 RUN	echo "magma:amgam" | chpasswd && usermod -a -G sudo magma
 
