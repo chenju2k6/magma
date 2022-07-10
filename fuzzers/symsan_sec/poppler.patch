@@ -1,0 +1,463 @@
+diff --git a/fuzzer/src/z3solver.rs b/fuzzer/src/z3solver.rs
+index 868726a..c880b27 100644
+--- a/fuzzer/src/z3solver.rs
++++ b/fuzzer/src/z3solver.rs
+@@ -52,6 +52,7 @@ pub fn read_concrete<'a>(ctx: &'a Context, data: &Vec<u8>) -> Option<z3::ast::Dy
+ 
+ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
+     cache: &mut HashMap<u32, HashSet<u32>>, 
++    divisors: &mut HashSet<u32>,
+     expr_cache: &mut HashMap<u32, z3::ast::Dynamic<'a>>, fmemcmp_data: &HashMap<u32, Vec<u8>>) -> Option<z3::ast::Dynamic<'a>> {
+ 
+   if label < 1 || label == std::u32::MAX {
+@@ -95,7 +96,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
+                  return Some(z3::ast::Dynamic::from(node));
+                },
+                DFSAN_ZEXT => {
+-                 let rawnode = serialize(info.l1, ctx, table, cache, expr_cache, fmemcmp_data);
++                 let rawnode = serialize(info.l1, ctx, table, cache, divisors, expr_cache, fmemcmp_data);
+                  if let Some(node) = rawnode {
+                    match node.sort_kind() {
+                      z3::SortKind::Bool => {
+@@ -126,13 +127,13 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
+                  if  info.l2 == 0 {
+                    return None;
+                  }
+-                 let raw_left = if info.l1 != 0 { serialize(info.l1, ctx, table, cache, expr_cache, fmemcmp_data) 
++                 let raw_left = if info.l1 != 0 { serialize(info.l1, ctx, table, cache, divisors, expr_cache, fmemcmp_data) 
+                  } else {
+                    if !fmemcmp_data.contains_key(&info.l2) { None } else {
+                      read_concrete(ctx,&fmemcmp_data[&info.l2])
+                    }
+                  };
+-                 let raw_right = serialize(info.l2, ctx, table, cache, expr_cache, fmemcmp_data);
++                 let raw_right = serialize(info.l2, ctx, table, cache, divisors, expr_cache, fmemcmp_data);
+                  if raw_left.is_some() && raw_right.is_some() {
+                    let equal = raw_left.unwrap()._eq(&raw_right.unwrap());
+                    let base = equal.ite(&ast::BV::from_i64(ctx,0,32), 
+@@ -158,7 +159,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
+                },
+ 
+                DFSAN_SEXT => {
+-                 let rawnode = serialize(info.l1, ctx, table, cache, expr_cache, fmemcmp_data);
++                 let rawnode = serialize(info.l1, ctx, table, cache, divisors, expr_cache, fmemcmp_data);
+                  if let Some(node) = rawnode {
+                    match node.sort_kind() {
+                      z3::SortKind::Bool => {
+@@ -183,7 +184,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
+                  }
+                },
+                DFSAN_TRUNC => {
+-                 let rawnode = serialize(info.l1, ctx, table, cache, expr_cache, fmemcmp_data);
++                 let rawnode = serialize(info.l1, ctx, table, cache, divisors, expr_cache, fmemcmp_data);
+                  if let Some(node) = rawnode {
+                    let base = node.as_bv().unwrap();
+                    let ret = z3::ast::Dynamic::from(base.extract(info.size as u32 - 1, 0));
+@@ -195,7 +196,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
+                  }
+                },
+                DFSAN_EXTRACT => {
+-                 let rawnode = serialize(info.l1, ctx, table, cache, expr_cache, fmemcmp_data);
++                 let rawnode = serialize(info.l1, ctx, table, cache, divisors, expr_cache, fmemcmp_data);
+                  if let Some(node) = rawnode {
+                    let base = node.as_bv().unwrap();
+                    let ret = z3::ast::Dynamic::from(base.extract(info.op2 as u32 + info.size as u32 - 1, info.op2 as u32));
+@@ -210,7 +211,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
+                  if info.l2 == 0 || info.size != 1 {
+                    return None;
+                  } else {
+-                   let rawnode = serialize(info.l2, ctx, table, cache, expr_cache, fmemcmp_data);
++                   let rawnode = serialize(info.l2, ctx, table, cache, divisors, expr_cache, fmemcmp_data);
+                    if let Some(node) = rawnode {
+                      // Only handle LNot
+                      if node.sort_kind() == z3::SortKind::Bool {
+@@ -230,7 +231,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
+                  if info.l2 == 0  {
+                    return None;
+                  } else {
+-                   let rawnode = serialize(info.l2, ctx, table, cache, expr_cache, fmemcmp_data);
++                   let rawnode = serialize(info.l2, ctx, table, cache, divisors, expr_cache, fmemcmp_data);
+                    if let Some(node) = rawnode {
+                      let ret = z3::ast::Dynamic::from(-node.as_bv().unwrap());
+                      cache.insert(label, cache[&info.l2].clone());
+@@ -249,7 +250,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
+   let mut right;
+   let mut size1: u32 = info.size as u32;
+   if info.l1 >= 1 {
+-    let opt_left = serialize(info.l1, ctx, table, cache, expr_cache, fmemcmp_data);
++    let opt_left = serialize(info.l1, ctx, table, cache, divisors, expr_cache, fmemcmp_data);
+     if opt_left.is_none() {
+       return None;
+     } else {
+@@ -266,7 +267,7 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
+     }
+   }
+   if info.l2 >= 1 {
+-    let opt_right = serialize(info.l2, ctx, table, cache, expr_cache, fmemcmp_data);
++    let opt_right = serialize(info.l2, ctx, table, cache, divisors, expr_cache, fmemcmp_data);
+     if opt_right.is_none() {
+       return None;
+     } else {
+@@ -367,21 +368,25 @@ pub fn serialize<'a>(label: u32, ctx: &'a Context, table: &UnionTable,
+               DFSAN_UDIV => {
+                 let node = z3::ast::Dynamic::from(left.as_bv().unwrap().bvudiv(&right.as_bv().unwrap()));
+                 expr_cache.insert(label,node.clone());
++                divisors.insert(info.l2);
+                 return Some(node);
+               },
+               DFSAN_SDIV => {
+                 let node = z3::ast::Dynamic::from(left.as_bv().unwrap().bvsdiv(&right.as_bv().unwrap()));
+                 expr_cache.insert(label,node.clone());
++                divisors.insert(info.l2);
+                 return Some(node);
+               },
+               DFSAN_UREM => {
+                 let node = z3::ast::Dynamic::from(left.as_bv().unwrap().bvurem(&right.as_bv().unwrap()));
+                 expr_cache.insert(label,node.clone());
++                divisors.insert(info.l2);
+                 return Some(node);
+               },
+               DFSAN_SREM => {
+                 let node = z3::ast::Dynamic::from(left.as_bv().unwrap().bvsrem(&right.as_bv().unwrap()));
+                 expr_cache.insert(label,node.clone());
++                divisors.insert(info.l2);
+                 return Some(node);
+               },
+               DFSAN_CONCAT => {
+@@ -474,8 +479,9 @@ pub fn add_cons<'a>(label: u32, table: &UnionTable,
+ 
+   let mut cache = HashMap::new();
+   let mut expr_cache = HashMap::new();
++  let mut divisors = HashSet::new();
+ 
+-  let rawcond = serialize(label, ctx, table, &mut cache, &mut expr_cache, fmemcmp_data);
++  let rawcond = serialize(label, ctx, table, &mut cache, &mut divisors, &mut expr_cache, fmemcmp_data);
+ 
+ 
+   if let Some(cond) = rawcond {
+@@ -549,12 +555,16 @@ pub fn solve_fmemcmp(label: u32, data: &Vec<u8>, size: u64, try_solve: bool, tab
+ */
+ 
+ 
+-pub fn solve_gep<'a>(label: u32, result: u64, try_solve: bool, table: &UnionTable, 
++pub fn solve_gep<'a>(label: u32, result: u64, 
++    try_solve: bool, table: &UnionTable, 
+     ctx: &'a Context, solver: &Solver, 
+-    uf: &mut UnionFind, branch_deps: &mut Vec<Option<BranchDep<'a>>>, fmemcmp_data: &HashMap<u32, Vec<u8>>) -> (Option<HashMap<u32,u8>>, Option<HashMap<u32,u8>>) {
++    uf: &mut UnionFind, 
++    branch_deps: &mut Vec<Option<BranchDep<'a>>>, 
++    fmemcmp_data: &HashMap<u32, Vec<u8>>) -> 
++    (Option<HashMap<u32,u8>>, Option<HashMap<u32,u8>>, Vec<HashMap<u32,u8>>) {
+ 
+ 
+-  let mut ret = (None, None);
++  let mut ret = (None, None, Vec::new());
+   if label == 0 {
+     return ret;
+   }
+@@ -565,8 +575,9 @@ pub fn solve_gep<'a>(label: u32, result: u64, try_solve: bool, table: &UnionTabl
+ 
+   let mut cache = HashMap::new();
+   let mut expr_cache = HashMap::new();
++  let mut divisors = HashSet::new();
+ 
+-  let rawcond = serialize(label, ctx, table, &mut cache, &mut expr_cache, fmemcmp_data);
++  let rawcond = serialize(label, ctx, table, &mut cache, &mut divisors, &mut expr_cache, fmemcmp_data);
+ 
+ 
+   if let Some(cond) = rawcond {
+@@ -602,6 +613,24 @@ pub fn solve_gep<'a>(label: u32, result: u64, try_solve: bool, table: &UnionTabl
+           ret.1 = Some(sol_nest);
+         }
+       }
++
++      for i in 0..1000 {
++        let index = z3::ast::BV::from_u64(ctx,i,info.size as u32);
++        solver.reset();
++        solver.assert(&cond._eq(&z3::ast::Dynamic::from_ast(&index)));
++        let mut res = solver.check();
++        if res == z3::SatResult::Sat  {
++          let m = solver.get_model().unwrap();
++          ret.2.push(generate_solution(ctx, &m, &deps));
++          solver.push(); 
++          let alldeps = add_dependencies(solver, v0, uf, branch_deps);
++          res = solver.check();
++          if res == z3::SatResult::Sat  {
++            let m = solver.get_model().unwrap();
++            ret.2.push(generate_solution(ctx, &m, &alldeps));
++          }
++        }
++      }
+     }
+     //preserve dependencies
+     //preserve
+@@ -609,24 +638,29 @@ pub fn solve_gep<'a>(label: u32, result: u64, try_solve: bool, table: &UnionTabl
+     preserve(path_cond, v0, branch_deps);
+   }
+ 
++
+   ret
+ }
+ 
+ pub fn solve_cond<'a>(label: u32, direction: u64, try_solve: bool, table: &UnionTable, 
+     ctx: &'a Context, solver: &Solver, 
+-    uf: &mut UnionFind, branch_deps: &mut Vec<Option<BranchDep<'a>>>, fmemcmp_data: &HashMap<u32, Vec<u8>>) -> (Option<HashMap<u32,u8>>, Option<HashMap<u32,u8>>) {
++    uf: &mut UnionFind, 
++    branch_deps: &mut Vec<Option<BranchDep<'a>>>, 
++    fmemcmp_data: &HashMap<u32, Vec<u8>>) -> 
++    (Option<HashMap<u32,u8>>, Option<HashMap<u32,u8>>, Vec<HashMap<u32,u8>>) {
+   let result = z3::ast::Bool::from_bool(ctx, direction == 1);
+   let result_bv = z3::ast::BV::from_i64(ctx, direction as i64, 1);
+ 
+-  let mut ret = (None, None);
++  let mut ret = (None, None, Vec::new());
+   if label == 0 {
+     return ret;
+   }
+ 
+   let mut cache = HashMap::new();
+   let mut expr_cache = HashMap::new();
++  let mut divisors = HashSet::new();
+ 
+-  let rawcond = serialize(label, ctx, table, &mut cache, &mut expr_cache, fmemcmp_data);
++  let rawcond = serialize(label, ctx, table, &mut cache, &mut divisors, &mut expr_cache, fmemcmp_data);
+ 
+ 
+   if let Some(cond) = rawcond {
+@@ -674,6 +708,34 @@ pub fn solve_cond<'a>(label: u32, direction: u64, try_solve: bool, table: &Union
+     }
+   }
+ 
++  for i in divisors {
++
++    let info_div = &table[i as usize];
++    let zero = z3::ast::BV::from_u64(ctx,0, info_div.size as u32);
++    let mut cache = HashMap::new();
++    let mut expr_cache = HashMap::new();
++    let mut divisors = HashSet::new();
++    let rawcond = serialize(i, ctx, table, &mut cache, &mut divisors, &mut expr_cache, fmemcmp_data);
++    if let Some(cond) = rawcond {
++      let mut deps = HashSet::new();
++      for &v in &cache[&i] {
++        deps.insert(v);
++      } 
++
++      if cond.as_bv().is_none() {
++        error!("condition must be a bv for gep");
++        continue;
++      }
++      solver.reset();
++      solver.assert(&cond._eq(&z3::ast::Dynamic::from_ast(&zero)));
++      let mut res = solver.check();
++      if res == z3::SatResult::Sat  {
++        let m = solver.get_model().unwrap();
++        ret.2.push(generate_solution(ctx, &m, &deps));
++      }
++    }
++  }
++
+   ret
+ }
+ 
+@@ -785,6 +847,13 @@ pub fn solve(shmid: i32, pipefd: RawFd, solution_queue: BlockingQueue<Solution>,
+               localcnt,  msg.result, 0, sol_size, msg.bid, msg.sctx, true, msg.predicate, msg.target_cond);
+           solution_queue.push(rgd_sol);
+         }
++
++        for sol in rawsol.2 {
++          let sol_size = sol.len();
++          let rgd_sol = Solution::new(sol, msg.tid, msg.addr, msg.ctx,
++              localcnt,  msg.result, 0, sol_size, msg.bid, msg.sctx, false, 0, 0);
++          solution_queue.push(rgd_sol);
++        }
+       } else if msg.msgtype == 1 {
+         //gep
+         if localcnt > 64 { continue; }
+@@ -802,6 +871,12 @@ pub fn solve(shmid: i32, pipefd: RawFd, solution_queue: BlockingQueue<Solution>,
+               localcnt,  msg.result, 0, sol_size, msg.bid, msg.sctx, false, 0, 0);
+           solution_queue.push(rgd_sol);
+         }
++        for sol in rawsol.2 {
++          let sol_size = sol.len();
++          let rgd_sol = Solution::new(sol, msg.tid, msg.addr, msg.ctx,
++              localcnt,  msg.result, 0, sol_size, msg.bid, msg.sctx, false, 0, 0);
++          solution_queue.push(rgd_sol);
++        }
+       } else if msg.msgtype == 2 {
+         //strcmp
+         let mut data = Vec::new();
+diff --git a/llvm_mode/dfsan_rt/dfsan/done_abilist.txt b/llvm_mode/dfsan_rt/dfsan/done_abilist.txt
+index 756ada0..1501355 100644
+--- a/llvm_mode/dfsan_rt/dfsan/done_abilist.txt
++++ b/llvm_mode/dfsan_rt/dfsan/done_abilist.txt
+@@ -61,8 +61,168 @@ fun:wait=discard
+ #fun:_ZNSt3__16vectorIjNS_9allocatorIjEEE21__push_back_slow_pathIRKjEEvOT_=uninstrumented
+ #fun:_ZNSt3__16vectorIjNS_9allocatorIjEEE21__push_back_slow_pathIRKjEEvOT_=discard
+ #
+-#fun:_ZdaPv=uninstrumented
+-#fun:_ZdaPv=discard
++fun:_ZdaPv=uninstrumented
++fun:_ZdaPv=discard
++fun:_Znam=uninstrumented
++fun:_Znam=discard
++fun:opj_image_destroy=uninstrumented
++fun:opj_stream_destroy=uninstrumented
++fun:opj_destroy_codec=uninstrumented
++fun:opj_end_decompress=uninstrumented
++fun:opj_read_header=uninstrumented
++fun:opj_setup_decoder=uninstrumented
++fun:opj_set_error_handler=uninstrumented
++fun:opj_create_decompress=uninstrumented
++fun:opj_stream_set_read_function=uninstrumented
++fun:opj_stream_set_skip_function=uninstrumented
++fun:opj_stream_set_user_data=uninstrumented
++fun:opj_stream_set_seek_function=uninstrumented
++fun:opj_stream_set_user_data_length=uninstrumented
++fun:opj_set_default_decoder_parameters=uninstrumented
++fun:opj_image_destroy=discard
++fun:opj_stream_destroy=discard
++fun:opj_destroy_codec=discard
++fun:opj_end_decompress=discard
++fun:opj_read_header=discard
++fun:opj_setup_decoder=discard
++fun:opj_set_error_handler=discard
++fun:opj_create_decompress=discard
++fun:opj_stream_set_read_function=discard
++fun:opj_stream_set_skip_function=discard
++fun:opj_stream_set_user_data=discard
++fun:opj_stream_set_seek_function=discard
++fun:opj_stream_set_user_data_length=discard
++fun:opj_set_default_decoder_parameters=discard
++
++fun:opj_stream_default_create=uninstrumented
++fun:opj_set_warning_handler=uninstrumented
++fun:opj_set_decode_area=uninstrumented
++fun:opj_decode=uninstrumented
++fun:jpeg_read_scanlines=uninstrumented
++fun:jpeg_write_scanlines=uninstrumented
++fun:jpeg_start_decompress=uninstrumented
++fun:jpeg_read_header=uninstrumented
++fun:jpeg_destroy_decompress=uninstrumented
++fun:jpeg_destroy_compress=uninstrumented
++fun:jpeg_CreateDecompress=uninstrumented
++fun:jpeg_CreateCompress=uninstrumented
++fun:jpeg_set_defaults=uninstrumented
++fun:jpeg_set_colorspace=uninstrumented
++fun:jpeg_set_quality=uninstrumented
++fun:jpeg_simple_progression=uninstrumented
++fun:jpeg_start_compress=uninstrumented
++fun:jpeg_finish_compress=uninstrumented
++fun:jpeg_stdio_dest=uninstrumented
++fun:jpeg_resync_to_restart=uninstrumented
++fun:jpeg_std_error=uninstrumented
++fun:IFFClose=uninstrumented
++fun:TIFFWriteScanline=uninstrumented
++fun:TIFFSetField=uninstrumented
++fun:TIFFDefaultStripSize=uninstrumented
++fun:TIFFFdOpen=uninstrumented
++fun:TIFFClose=uninstrumented
++fun:TIFFClose=discard
++fun:png_init_io=uninstrumented
++fun:png_init_io=discard
++fun:png_set_read_fn=uninstrumented
++fun:png_set_read_fn=discard
++fun:png_read_info=uninstrumented
++fun:png_read_info=discard
++fun:png_get_IHDR=uninstrumented
++fun:png_get_IHDR=discard
++fun:png_set_palette_to_rgb=uninstrumented
++fun:png_set_palette_to_rgb=discard
++fun:png_set_expand_gray_1_2_4_to_8=uninstrumented
++fun:png_set_expand_gray_1_2_4_to_8=discard
++fun:png_get_valid=uninstrumented
++fun:png_get_valid=discard
++fun:png_set_tRNS_to_alpha=uninstrumented
++fun:png_set_tRNS_to_alpha=discard
++fun:png_set_strip_16=uninstrumented
++fun:png_set_strip_16=discard
++fun:png_set_packing=uninstrumented
++fun:png_set_packing=discard
++fun:png_set_gray_to_rgb=uninstrumented
++fun:png_set_gray_to_rgb=discard
++fun:png_set_interlace_handling=uninstrumented
++fun:png_set_interlace_handling=discard
++fun:png_set_filler=uninstrumented
++fun:png_read_update_info=discard
++fun:png_set_read_user_transform_fn=uninstrumented
++fun:png_set_read_user_transform_fn=discard
++fun:png_read_image=uninstrumented
++fun:png_read_image=discard
++fun:png_read_end=uninstrumented
++fun:png_read_end=discard
++fun:png_get_error_ptr=uninstrumented
++fun:png_get_error_ptr=discard
++fun:png_get_io_ptr=uninstrumented
++fun:png_get_io_ptr=discard
++fun:png_error=uninstrumented
++fun:png_error=discard
++fun:png_read_update_info=uninstrumented
++fun:png_set_filler=discard
++fun:png_set_compression_level=uninstrumented
++fun:png_set_compression_level=discard
++fun:png_destroy_write_struct=uninstrumented
++fun:png_destroy_write_struct=discard
++fun:png_destroy_read_struct=uninstrumented
++fun:png_destroy_read_struct=discard
++fun:png_set_longjmp_fn=uninstrumented
++fun:png_write_end=uninstrumented
++fun:png_write_rows=uninstrumented
++fun:png_write_image=uninstrumented
++fun:png_write_info=uninstrumented
++fun:png_set_sRGB=uninstrumented
++fun:png_set_iCCP=uninstrumented
++fun:png_set_pHYs=uninstrumented
++fun:png_set_IHDR=uninstrumented
++fun:ng_set_compression_level=uninstrumented
++fun:png_create_write_struct=uninstrumented
++fun:png_create_read_struct=uninstrumented
++fun:png_create_info_struct=uninstrumented
++
++
++fun:opj_stream_default_create=discard
++fun:opj_set_warning_handler=discard
++fun:opj_set_decode_area=discard
++fun:opj_decode=discard
++fun:jpeg_read_scanlines=discard
++fun:jpeg_write_scanlines=discard
++fun:jpeg_start_decompress=discard
++fun:jpeg_read_header=discard
++fun:jpeg_destroy_decompress=discard
++fun:jpeg_destroy_compress=discard
++fun:jpeg_CreateDecompress=discard
++fun:jpeg_CreateCompress=discard
++fun:jpeg_set_defaults=discard
++fun:jpeg_set_quality=discard
++fun:jpeg_set_colorspace=discard
++fun:jpeg_set_stdio_dest=discard
++fun:jpeg_simple_progression=discard
++fun:jpeg_start_compress=discard
++fun:jpeg_finish_compress=discard
++fun:jpeg_resync_to_restart=discard
++fun:jpeg_std_error=discard
++fun:IFFClose=discard
++fun:TIFFWriteScanline=discard
++fun:TIFFSetField=discard
++fun:TIFFDefaultStripSize=discard
++fun:TIFFFdOpen=discard
++fun:png_set_longjmp_fn=discard
++fun:png_write_end=discard
++fun:png_write_rows=discard
++fun:png_write_image=discard
++fun:png_write_info=discard
++fun:png_set_sRGB=discard
++fun:png_set_iCCP=discard
++fun:png_set_pHYs=discard
++fun:png_set_IHDR=discard
++fun:ng_set_compression_level=discard
++fun:png_create_write_struct=discard
++fun:png_create_read_struct=discard
++fun:png_create_info_struct=discard
++
+ #fun:_ZdlPv=uninstrumented
+ #fun:_ZdlPv=discard
+ #fun:_Znwm=uninstrumented
